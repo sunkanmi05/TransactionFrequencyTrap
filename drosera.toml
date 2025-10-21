@@ -1,0 +1,18 @@
+ethereum_rpc = "https://rpc.ankr.com/eth_hoodi/184da22932078a9c1ef5b2bec7769d94d0dc8a70d096f97724dbaaba6e85f8da"
+drosera_rpc = "https://relay.hoodi.drosera.io"
+eth_chain_id = 560048
+drosera_address = "0x91cB447BaFc6e0EA0F4Fe056F5a9b1F14bb06e5D"
+
+[traps]
+
+[traps.transaction_frequency_trap]
+path = "out/TransactionFrequencyTrap.sol/TransactionFrequencyTrap.json"
+response_contract = "0x5b08970677AA5Fa7bA5735F9ca0C375fE3Af89C7" 
+response_function = "respondCallback(uint256)" 
+cooldown_period_blocks = 33
+min_number_of_operators = 1
+max_number_of_operators = 2
+block_sample_size = 10
+private_trap = true
+whitelist = ["0xf217bd47581e231b35159b5b9adc6e51a6ba6ac3","0xE56B1b8C59d9A14b8dbb4c2b649168cCDF5Cd320"]
+address = "0xeCbc896c94c4ba184c1888DF3A4DBeD3f92A4441"
