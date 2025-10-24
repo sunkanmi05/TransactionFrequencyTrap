@@ -19,19 +19,67 @@ This trap is designed to monitor and respond to unusual spikes in transaction fr
 
 ## Detection Logic
 
-The trap's core monitoring logic is contained in the deterministic `shouldRespond()` function, which compares the current transaction count to a previously sampled count.
+The trap uses Drosera’s deterministic planning model to detect spikes in ERC-20 Transfer activity emitted by a target contract. Instead of relying on synthetic counters, it collects real on-chain logs (EventLog[]) and compares the most recent window of events against the previous one.
 
 ```solidity
-// The logic compares the current total count to a count from a previous block.
-function shouldRespond(bytes[] calldata data) external pure override returns (bool, bytes memory) {
-    CollectOutput memory current = abi.decode(data[0], (CollectOutput));
-    CollectOutput memory past = abi.decode(data[data.length - 1], (CollectOutput));
+During each planning epoch:
 
-    // Checks if the count increase over the sampled period exceeds the THRESHOLD.
-    if (current.transactionCount > past.transactionCount + THRESHOLD) { 
-        return (true, bytes("Transaction frequency spike detected."));
+collect():
+
+Fetches filtered Transfer logs from the target contract
+
+Encodes (EventLog[], blockNumber)
+
+shouldRespond():
+
+Safely guards against empty data during planning
+
+Decodes the two most recent samples
+
+Counts how many Transfer events occurred within a rolling window (default: 30 blocks)
+
+Computes the delta (spike amount)
+
+Returns (true, abi.encode(delta)) if that spike exceeds a configurable threshold
+
+function shouldRespond(bytes[] calldata data)
+    external
+    pure
+    override
+    returns (bool, bytes memory)
+{
+    if (data.length < 2 || data[0].length == 0 || data[1].length == 0) {
+        return (false, abi.encode(uint256(0)));
     }
-    return (false, bytes(""));
+
+    (EventLog[] memory currLogs, uint256 currBlk) =
+        abi.decode(data[0], (EventLog[], uint256));
+
+    (EventLog[] memory prevLogs, uint256 prevBlk) =
+        abi.decode(data[1], (EventLog[], uint256));
+
+    uint256 minCurr = currBlk > WINDOW ? currBlk - WINDOW + 1 : 0;
+    uint256 minPrev = prevBlk > WINDOW ? prevBlk - WINDOW + 1 : 0;
+
+    uint256 currCount;
+    for (uint256 i; i < currLogs.length; i++) {
+        if (currLogs[i].blockNumber >= minCurr) currCount++;
+    }
+
+    uint256 prevCount;
+    for (uint256 i; i < prevLogs.length; i++) {
+        if (prevLogs[i].blockNumber >= minPrev) prevCount++;
+    }
+
+    uint256 delta = currCount > prevCount ? currCount - prevCount : 0;
+
+    if (delta > THRESHOLD) {
+        return (true, abi.encode(delta));
+    }
+
+    return (false, abi.encode(uint256(0)));
+}
+
 }
 ```
 
