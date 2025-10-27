@@ -3,43 +3,49 @@ pragma solidity ^0.8.20;
 
 import {
     Trap,
-    EventFilter,
-    EventLog,
-    EventFilterLib
+    EventFilter
+    // Removed unused imports: EventLog, EventFilterLib
 } from "drosera-contracts/Trap.sol";
 
-contract TransactionFrequencyTrap is Trap {
-    using EventFilterLib for EventFilter;
+// Note: No need for 'using EventFilterLib for EventFilter;' here
 
-    // ERC-20 to monitor
+contract TransactionFrequencyTrap is Trap {
+    // ERC-20 to monitor (This address should be correct for your token)
     address public constant TARGET =
         0xFba1bc0E3d54D71Ba55da7C03c7f63D4641921B1;
 
     // keccak256("Transfer(address,address,uint256)")
-    bytes32 public constant TRANSFER_SIG =
-        0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef;
+    // Note: This constant is not needed if using the string signature in eventLogFilters
+    // bytes32 public constant TRANSFER_SIG = 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef;
 
     uint256 public constant THRESHOLD = 10; // spike amount
     uint256 public constant WINDOW = 30;    // block window
 
     constructor() {}
 
-    // Called by Drosera operators to collect logs
-    function collect() external view override returns (bytes memory) {
-        EventFilter memory filter = EventFilter({
-            address_: TARGET,
-            topics: new bytes32
+    // 1. **FIXED API MISUSE:** Define filters for Drosera to collect logs
+    function eventLogFilters() public view override returns (EventFilter[] memory) {
+        EventFilter[] memory filters = new EventFilter[](1);
+        
+        // Define the filter using the correct struct fields and event signature
+        filters[0] = EventFilter({
+            contractAddress: TARGET,
+            signature: "Transfer(address,address,uint256)" // Using string signature
         });
+        return filters;
+    }
 
-        // Filter Transfer events
-        filter.topics[0] = TRANSFER_SIG;
-
-        EventLog[] memory logs = filter.collectLogs();
-
+    // 2. **FIXED API MISUSE:** Use the built-in getEventLogs() provided by the Trap base
+    function collect() external view override returns (bytes memory) {
+        // This function now uses the filters defined in eventLogFilters()
+        EventLog[] memory logs = getEventLogs(); 
+        
+        // Return logs and current block number, as expected by shouldRespond()
         return abi.encode(logs, block.number);
     }
 
     // Detect spikes
+    // NOTE: This logic remains the same, but relies on the correctly formatted payload from collect()
     function shouldRespond(bytes[] calldata data)
         external
         pure

@@ -1,11 +1,11 @@
-ethereum_rpc = "https://rpc.ankr.com/eth_hoodi/184da22932078a9c1ef5b2bec7769d94d0dc8a70d096f97724dbaaba6e85f8da"
+ethereum_rpc = "https://ethereum-hoodi-rpc.publicnode.com"
 drosera_rpc = "https://relay.hoodi.drosera.io"
 
 [traps]
 
 [traps.transaction_frequency_trap]
 path = "out/TransactionFrequencyTrap.sol/TransactionFrequencyTrap.json"
-response_contract = "0x5b08970677AA5Fa7bA5735F9ca0C375fE3Af89C7"
+response_contract = "0x687EC8f66D66b1DAcDf78f695304dae7Bb41312C"
 response_function = "respondCallback(uint256)"
 collection_function = "collect()"
 should_respond_function = "shouldRespond(bytes[])"

@@ -1,3 +1,4 @@
+
 # TransactionFrequencyTrap (Drosera Proof-of-Concept)
 
 ## Overview
@@ -18,30 +19,26 @@ This trap is designed to monitor and respond to unusual spikes in transaction fr
   * `foundry.toml` – The Foundry configuration file, crucial for handling dependencies and remappings.
 
 ## Detection Logic
+The trap uses Drosera's deterministic planning model to detect spikes in ERC-20 `Transfer` activity emitted by a target contract. Instead of relying on synthetic counters, it collects real on-chain logs (`EventLog[]`) and compares the transaction count in the most recent window of events against the previous sampled window.
 
-The trap uses Drosera’s deterministic planning model to detect spikes in ERC-20 Transfer activity emitted by a target contract. Instead of relying on synthetic counters, it collects real on-chain logs (EventLog[]) and compares the most recent window of events against the previous one.
+During each planning epoch, the logic performs the following steps:
+
+### `collect()`
+
+1.  Fetches filtered `Transfer` logs from the target contract using the `eventLogFilters` defined in the trap.
+2.  Encodes the collected data as a tuple: `(EventLog[], currentBlockNumber)`.
+
+### `shouldRespond()`
+
+1.  Safely guards against empty or incomplete data during the planning process.
+2.  Decodes the two most recent samples (`currLogs` and `prevLogs`).
+3.  Counts how many `Transfer` events occurred within a **rolling window** (default: `WINDOW` blocks) for both samples.
+4.  Computes the delta (spike amount) between the current count and the previous count.
+5.  Returns `(true, abi.encode(delta))` if that spike (`delta`) exceeds the configurable `THRESHOLD`.
+
+### Solidity Implementation
 
 ```solidity
-During each planning epoch:
-
-collect():
-
-Fetches filtered Transfer logs from the target contract
-
-Encodes (EventLog[], blockNumber)
-
-shouldRespond():
-
-Safely guards against empty data during planning
-
-Decodes the two most recent samples
-
-Counts how many Transfer events occurred within a rolling window (default: 30 blocks)
-
-Computes the delta (spike amount)
-
-Returns (true, abi.encode(delta)) if that spike exceeds a configurable threshold
-
 function shouldRespond(bytes[] calldata data)
     external
     pure
@@ -58,19 +55,23 @@ function shouldRespond(bytes[] calldata data)
     (EventLog[] memory prevLogs, uint256 prevBlk) =
         abi.decode(data[1], (EventLog[], uint256));
 
+    // Define the start block for the rolling window for both current and previous samples.
     uint256 minCurr = currBlk > WINDOW ? currBlk - WINDOW + 1 : 0;
     uint256 minPrev = prevBlk > WINDOW ? prevBlk - WINDOW + 1 : 0;
 
+    // Count events within the current window
     uint256 currCount;
     for (uint256 i; i < currLogs.length; i++) {
         if (currLogs[i].blockNumber >= minCurr) currCount++;
     }
 
+    // Count events within the previous window
     uint256 prevCount;
     for (uint256 i; i < prevLogs.length; i++) {
         if (prevLogs[i].blockNumber >= minPrev) prevCount++;
     }
 
+    // Compute delta (spike amount)
     uint256 delta = currCount > prevCount ? currCount - prevCount : 0;
 
     if (delta > THRESHOLD) {
@@ -78,8 +79,6 @@ function shouldRespond(bytes[] calldata data)
     }
 
     return (false, abi.encode(uint256(0)));
-}
-
 }
 ```
 

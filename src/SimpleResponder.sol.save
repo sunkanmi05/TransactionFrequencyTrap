@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract SimpleResponder {
+    event SpikeDetected(uint256 delta, uint256 atBlock);
+
+    function respondCallback(uint256 amount) external {
+        emit SpikeDetected(amount, block.number);
+    }
+}
+
