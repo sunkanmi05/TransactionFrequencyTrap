@@ -1,42 +1,45 @@
 
-# TransactionFrequencyTrap (Drosera Proof-of-Concept)
 
-## Overview
+##  Transaction Frequency Spike Trap (Drosera Proof-of-Concept)
 
-This trap is designed to monitor and respond to unusual spikes in transaction frequency targeting a specific address on the Hoodi Testnet. It is critical for defending against spamming, denial-of-service attempts, or specific economic exploits that rely on rapid transaction submissions.
+### Overview
 
-## What It Does
+This trap is designed to monitor and respond to unusual spikes in the **rate of ERC-20 Transfer events** emitted by a specific token. It serves as a proxy for detecting a sudden flood of transactions involving that token, which can indicate unusual market activity, bot front-running, or other exploit attempts.
 
-  * Monitors the total number of transactions sent to a designated address within a rolling block window.
-  * **Triggers** if the transaction count exceeds a defined threshold within that short window, indicating a spike in activity.
-  * It demonstrates the essential Drosera trap pattern using deterministic off-chain logic.
+### What It Does
 
-## Key Files
+  * Monitors the **total number of `Transfer` events** emitted by a designated **`TARGET`** token during each sampling epoch.
+  * Triggers if the **increase in event count (delta)** between the newest sample and the previous sample exceeds a defined **`THRESHOLD`**.
+  * It demonstrates the essential Drosera trap pattern using deterministic off-chain logic for log analysis.
+
+### Key Files
 
   * `src/TransactionFrequencyTrap.sol` – The core trap contract containing the monitoring logic.
   * `src/SimpleResponder.sol` – The required external response contract that executes the action.
   * `drosera.toml` – The deployment, configuration, and operator-specific settings file.
-  * `foundry.toml` – The Foundry configuration file, crucial for handling dependencies and remappings.
 
-## Detection Logic
-The trap uses Drosera's deterministic planning model to detect spikes in ERC-20 `Transfer` activity emitted by a target contract. Instead of relying on synthetic counters, it collects real on-chain logs (`EventLog[]`) and compares the transaction count in the most recent window of events against the previous sampled window.
+### Detection Logic
+
+The trap uses Drosera's deterministic planning model to detect spikes in ERC-20 `Transfer` activity. It collects the logs (`EventLog[]`) and then reduces the data to a simple count, comparing the event frequency between two distinct samples.
 
 During each planning epoch, the logic performs the following steps:
 
-### `collect()`
+1.  **`collect()`**
 
-1.  Fetches filtered `Transfer` logs from the target contract using the `eventLogFilters` defined in the trap.
-2.  Encodes the collected data as a tuple: `(EventLog[], currentBlockNumber)`.
+      * Fetches filtered `Transfer` logs from the `TARGET` token using the `eventLogFilters` defined in the trap.
+      * **Calculates the total number of logs (`logs.length`).**
+      * Encodes the collected data as a tuple: `(uint256 logCount, uint256 currentBlockNumber)`.
 
-### `shouldRespond()`
+2.  **`shouldRespond()`**
 
-1.  Safely guards against empty or incomplete data during the planning process.
-2.  Decodes the two most recent samples (`currLogs` and `prevLogs`).
-3.  Counts how many `Transfer` events occurred within a **rolling window** (default: `WINDOW` blocks) for both samples.
-4.  Computes the delta (spike amount) between the current count and the previous count.
-5.  Returns `(true, abi.encode(delta))` if that spike (`delta`) exceeds the configurable `THRESHOLD`.
+      * Safely guards against empty or incomplete data during the planning process.
+      * **Decodes the two most recent samples as simple counts:** `(currCount, currBlk)` and `(prevCount, prevBlk)`.
+      * Computes the **delta (spike amount)** between the `currCount` and the `prevCount`.
+      * Returns `(true, abi.encode(delta))` if that spike (`delta`) exceeds the configurable **`THRESHOLD`** (default: 10).
 
-### Solidity Implementation
+### ⚙️ Solidity Implementation (Key Logic)
+
+The complexity of checking each log's `blockNumber` is eliminated, ensuring robustness across different `EventLog` definitions.
 
 ```solidity
 function shouldRespond(bytes[] calldata data)
@@ -45,55 +48,33 @@ function shouldRespond(bytes[] calldata data)
     override
     returns (bool, bytes memory)
 {
-    if (data.length < 2 || data[0].length == 0 || data[1].length == 0) {
-        return (false, abi.encode(uint256(0)));
-    }
-
-    (EventLog[] memory currLogs, uint256 currBlk) =
-        abi.decode(data[0], (EventLog[], uint256));
-
-    (EventLog[] memory prevLogs, uint256 prevBlk) =
-        abi.decode(data[1], (EventLog[], uint256));
-
-    // Define the start block for the rolling window for both current and previous samples.
-    uint256 minCurr = currBlk > WINDOW ? currBlk - WINDOW + 1 : 0;
-    uint256 minPrev = prevBlk > WINDOW ? prevBlk - WINDOW + 1 : 0;
-
-    // Count events within the current window
-    uint256 currCount;
-    for (uint256 i; i < currLogs.length; i++) {
-        if (currLogs[i].blockNumber >= minCurr) currCount++;
-    }
-
-    // Count events within the previous window
-    uint256 prevCount;
-    for (uint256 i; i < prevLogs.length; i++) {
-        if (prevLogs[i].blockNumber >= minPrev) prevCount++;
-    }
-
-    // Compute delta (spike amount)
+    // Safety guards...
+    // FIX: Decodes only the count (uint256) and block number
+    (uint256 currCount, ) = abi.decode(data[0], (uint256, uint256));
+    (uint256 prevCount, ) = abi.decode(data[1], (uint256, uint256));
+    
+    // FIX: Simple count comparison (no WINDOW logic needed)
     uint256 delta = currCount > prevCount ? currCount - prevCount : 0;
 
     if (delta > THRESHOLD) {
-        return (true, abi.encode(delta));
+        return (true, abi.encode(delta)); // Returns the delta (uint256)
     }
 
     return (false, abi.encode(uint256(0)));
 }
 ```
 
-##  Implementation Details and Key Concepts
+### Implementation Details and Key Concepts
 
-  * **Monitoring Target:** Watching the cumulative transaction count targeting a specified address (`TARGET_ADDRESS`).
-  * **Threshold:** The `THRESHOLD` constant (`10` in your code) defines the maximum allowable increase in transactions over the `block_sample_size` period.
-  * **Deterministic Logic:** The `shouldRespond()` function is executed off-chain by a decentralized network of operators to achieve consensus before a single transaction is proposed.
-  * **Response Mechanism:** On trigger, the trap calls the external `SimpleResponder` contract, demonstrating the separation of monitoring and corrective action.
+  * **Monitoring Metric:** Watching the **increase in `Transfer` event count** between samples.
+  * **Resilience:** The trap design is resilient because it only relies on the **number of logs** collected, not on the `blockNumber` field within the `EventLog` struct itself.
+  * **Threshold:** The `THRESHOLD` constant (10 in the code) defines the maximum allowable increase in events over the `block_sample_size` period defined in `drosera.toml`.
+  * **Response Mechanism:** On trigger, the trap returns the **`delta`** (the spike amount), which is consumed by the external `SimpleResponder` contract via the expected `respondCallback(uint256)` function.
 
-## Test It
+### Test It
 
 To verify the trap logic using Foundry, run the following command (assuming a test file has been created, e.g., `test/TransactionFrequencyTrap.t.sol`):
 
 ```bash
 forge test --match-contract TransactionFrequencyTrap
 ```
-
